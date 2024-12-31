@@ -1,0 +1,22 @@
+name = "MacOSIOReport"
+uuid = "27799fc1-e272-4181-9793-a9e1fcba685b"
+authors = ["SatoshiTerasaki <terasakisatoshi.math@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+ObjectiveC = "e86c9b32-1129-44ac-8ea0-90d5bb39ded9"
+
+[compat]
+Metal = "1.4.2"
+ObjectiveC = "3.1.0"
+ReTestItems = "1.29.0"
+
+[extras]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+ReTestItems = "817f1d60-ba6b-4fd5-9520-3cf149f6a823"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Aqua", "JET", "Test", "ReTestItems"]
