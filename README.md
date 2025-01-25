@@ -33,7 +33,7 @@ $ julia --project demo.jl
 ┌ Info: P-CPU
 └   (Int(m.pcpu_usage[1]), 100 * m.pcpu_usage[2]) = (1103, 0.9710949845612049)
 ┌ Info: GPU
-└   (Int(m.gpu_usage[1]), 100 * m.pcpu_usage[2]) = (333, 0.9710949845612049)
+└   (Int(m.gpu_usage[1]), 100 * m.gpu_usage[2]) = (333, 0.9710949845612049)
 ┌ Info: CPU Power
 └   m.cpu_power = 0.29085867707151625
 ┌ Info: GPU Power
