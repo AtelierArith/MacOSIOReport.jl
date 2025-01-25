@@ -21,7 +21,7 @@ function handle_raw(msec)
         @info m
         @info "E-CPU" Int(m.ecpu_usage[1]), 100 * m.ecpu_usage[2]
         @info "P-CPU" Int(m.pcpu_usage[1]), 100 * m.pcpu_usage[2]
-        @info "GPU" Int(m.gpu_usage[1]), 100 * m.pcpu_usage[2]
+        @info "GPU" Int(m.gpu_usage[1]), 100 * m.gpu_usage[2]
         @info "CPU Power" m.cpu_power
         @info "GPU Power" m.gpu_power
     end
