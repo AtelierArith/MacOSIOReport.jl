@@ -22,15 +22,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['lts', '1']
         include:
-          # Ubuntu の場合は x64 のみ
-          - os: ubuntu-latest
+          - version: 'lts'
+            os: ubuntu-latest
             arch: x64
-          # macOS の場合は aarch64 のみ
-          - os: macos-latest
+          - version: 'lts'
+            os: macos-latest
             arch: aarch64
-    steps:
+          - version: 'lts'
+            os: macos-latest
+            arch: x64
+          - version: '1'
+            os: ubuntu-latest
+            arch: x64
+          - version: '1'
+            os: macos-latest
+            arch: aarch64
+          - version: '1'
+            os: macos-latest
+            arch: x64
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
