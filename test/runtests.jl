@@ -1,4 +1,9 @@
+using Test
 using ReTestItems
 using MacOSIOReport
 
-ReTestItems.runtests(MacOSIOReport)
+if Sys.isapple() && Sys.ARCH == :aarch64
+	ReTestItems.runtests(MacOSIOReport)
+else
+	@test true
+end
