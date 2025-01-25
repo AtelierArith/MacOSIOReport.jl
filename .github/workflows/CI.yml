@@ -27,7 +27,7 @@ jobs:
           - '1'
         os:
           - ubuntu-latest
-          - macos-latest
+          - macos-14
         arch:
           - x64
           - aarch64
