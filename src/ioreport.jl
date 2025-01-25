@@ -38,7 +38,7 @@ function IOReportChannelGetUnitLabel(a::CFDictionaryRef)::CFStringRef
     )
 end
 
-function cfio_get_group(item::CFDictionaryRef)
+function cfio_get_group(item::CFDictionaryRef)::String
     grpref = IOReportChannelGetGroup(item)
     if grpref == C_NULL
         return ""
@@ -46,7 +46,7 @@ function cfio_get_group(item::CFDictionaryRef)
     return String(CFString(grpref))
 end
 
-function cfio_get_subgroup(item::CFDictionaryRef)
+function cfio_get_subgroup(item::CFDictionaryRef)::String
     sgref = IOReportChannelGetSubGroup(item)
     if sgref == C_NULL
         return ""
@@ -54,7 +54,7 @@ function cfio_get_subgroup(item::CFDictionaryRef)
     return String(CFString(sgref))
 end
 
-function cfio_get_channel(item::CFDictionaryRef)
+function cfio_get_channel(item::CFDictionaryRef)::String
     cname = IOReportChannelGetChannelName(item)
     if cname == C_NULL
         return ""
@@ -62,7 +62,7 @@ function cfio_get_channel(item::CFDictionaryRef)
     return String(CFString(cname))
 end
 
-function cfio_get_get_unitlabel(item::CFDictionaryRef)
+function cfio_get_get_unitlabel(item::CFDictionaryRef)::String
     unitlabel = IOReportChannelGetUnitLabel(item)
     if unitlabel == C_NULL
         return ""

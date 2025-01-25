@@ -33,4 +33,17 @@ function main()
     handle_raw(msec)
 end
 
+function __init__()
+    if !(Sys.isapple() && Sys.ARCH == :aarch64)
+        # change this to an error in future
+        @warn("""
+              MacOSIOReport.jl can only be used on Apple macOS. Suggested usage is
+                  @static if Sys.isapple() && Sys.ARCH == :aarch64
+                      using MacOSIOReport
+                      # MacOSIOReport specific code goes here
+                  end
+              """)
+    end
+end
+
 end # module MacOSIOReport
