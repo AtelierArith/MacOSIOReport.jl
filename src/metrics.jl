@@ -81,12 +81,27 @@ function calc_freq(item::CFDictionaryRef, freqs::Vector{UInt32})::Tuple{UInt32,F
 end
 
 function calc_freq_final(items, freqs)
+    (isempty(items) || isempty(freqs)) && return (UInt32(0), 0.0f0)
     avg_freq = zero_div(sum(x[1] for x in items), length(items))
     avg_perc = zero_div(sum(x[2] for x in items), length(items))
     min_freq = first(freqs)
 
     m = max(avg_freq, min_freq)
     return round(UInt32, m), Float32(avg_perc)
+end
+
+function energy_field(channel::String)
+    endswith(channel, "CPU Energy") && return :cpu_power
+    channel == "GPU Energy" && return :gpu_power
+    startswith(channel, "ANE") && return :ane_power
+    return nothing
+end
+
+function add_energy!(metrics, channel::String, watts)
+    field = energy_field(channel)
+    field === nothing && return metrics
+    setproperty!(metrics, field, getproperty(metrics, field) + watts)
+    return metrics
 end
 
 @kwdef mutable struct Metrics
@@ -126,22 +141,21 @@ function get_metrics(sampler::Sampler, duration::UInt64)
             for x in ioreport_iterator
                 try
                     if x.group == "CPU Stats" && x.subgroup == "CPU Core Performance States"
-                        if occursin("ECPU", x.channel)
+                        if occursin("ECPU", x.channel) && !isempty(sampler.soc.ecpu_freqs)
                             push!(ecpu_usages, calc_freq(x.item, sampler.soc.ecpu_freqs))
-                        elseif occursin("PCPU", x.channel)
+                        elseif occursin("PCPU", x.channel) &&
+                               !isempty(sampler.soc.pcpu_freqs)
                             push!(pcpu_usages, calc_freq(x.item, sampler.soc.pcpu_freqs))
                         end
                     elseif x.group == "GPU Stats" && x.subgroup == "GPU Performance States"
-                        if x.channel == "GPUPH"
+                        if x.channel == "GPUPH" && length(sampler.soc.gpu_freqs) > 1
                             rs.gpu_usage = calc_freq(x.item, sampler.soc.gpu_freqs[2:end])
                         end
                     elseif x.group == "Energy Model"
-                        if x.channel == "CPU Energy"
-                            rs.cpu_power += cfio_watts(x.item, x.unit, sample_dt)
-                        elseif x.channel == "GPU Energy"
-                            rs.gpu_power += cfio_watts(x.item, x.unit, sample_dt)
-                        elseif startswith(x.channel, "ANE")
-                            rs.ane_power += cfio_watts(x.item, x.unit, sample_dt)
+                        field = energy_field(x.channel)
+                        if field !== nothing
+                            watts = cfio_watts(x.item, x.unit, sample_dt)
+                            add_energy!(rs, x.channel, watts)
                         end
                     end
                 finally

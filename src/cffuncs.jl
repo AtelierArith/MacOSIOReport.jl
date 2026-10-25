@@ -30,19 +30,18 @@ function IORegistryEntryCreateCFProperties(
 end
 
 function cfio_get_props(entry::UInt32, devname::String)::CFDictionaryRef
-	propsref = Ref{CFDictionaryRef}(C_NULL)
-	kCFAllocatorDefault = Ptr{Cvoid}(0)
-	ret = IORegistryEntryCreateCFProperties(entry, propsref, kCFAllocatorDefault, UInt32(0))
-	if ret != 0
-		error("Failed to get properties for $devname")
-	end
-	return propsref[]
+    propsref = Ref{CFDictionaryRef}(C_NULL)
+    kCFAllocatorDefault = Ptr{Cvoid}(0)
+    ret = IORegistryEntryCreateCFProperties(entry, propsref, kCFAllocatorDefault, UInt32(0))
+    if ret != 0
+        error("Failed to get properties for $devname")
+    end
+    return propsref[]
 end
 
 # cfdict_keys requires for running tests
 function cfdict_keys(dict::CFDictionaryRef)::Vector{String}
-    count =
-        ccall(:CFDictionaryGetCount, Csize_t, (CFDictionaryRef,), dict)
+    count = ccall(:CFDictionaryGetCount, Csize_t, (CFDictionaryRef,), dict)
     if count == 0
         return String[]
     end
@@ -101,27 +100,30 @@ function IOServiceGetMatchingServices(
 end
 
 function IORegistryEntryGetName(entry::UInt32, name::Ptr{Cchar})::Int32
-    return ccall(
-        :IORegistryEntryGetName,
-        Int32,
-        (UInt32, Ptr{Cchar}),
-        entry,
-        name,
-    )
+    return ccall(:IORegistryEntryGetName, Int32, (UInt32, Ptr{Cchar}), entry, name)
 end
 
 function IOServiceMatching(name::String)::CFDictionaryRef
     cstr = String(name) * "\0"
-    return ccall(
-        :IOServiceMatching,
-        CFDictionaryRef,
-        (Ptr{UInt8},),
-        pointer(cstr),
-    )
+    return ccall(:IOServiceMatching, CFDictionaryRef, (Ptr{UInt8},), pointer(cstr))
 end
 
 function to_mhz(vals::Vector{UInt32}, scale::UInt32)
     return [v ÷ scale for v in vals]
+end
+
+function cfdata_bytes(obj)
+    obj_len = ccall(:CFDataGetLength, Csize_t, (CFDataRef,), obj)
+    buf = Vector{UInt8}(undef, obj_len)
+    ccall(
+        :CFDataGetBytes,
+        Cvoid,
+        (CFDataRef, CFRange, Ptr{UInt8}),
+        obj,
+        CFRange(0, obj_len),
+        buf,
+    )
+    return buf
 end
 
 function get_dvfs_mhz(
@@ -132,24 +134,14 @@ function get_dvfs_mhz(
     if cfd === nothing
         return (UInt32[], UInt32[])
     end
-    obj = cfd::CFDataRef
-    obj_len = ccall(:CFDataGetLength, Csize_t, (CFDataRef,), obj)
-    buf = Vector{UInt8}(undef, obj_len)
-    rng = CFRange(0, obj_len)
-    ccall(
-        :CFDataGetBytes,
-        Cvoid,
-        (CFDataRef, CFRange, Ptr{UInt8}),
-        obj,
-        rng,
-        pointer(buf),
-    )
+    buf = cfdata_bytes(cfd)
+    obj_len = length(buf)
 
     item_count = div(obj_len, 8)
     freqs = Vector{UInt32}(undef, item_count)
     volts = Vector{UInt32}(undef, item_count)
     for i = 0:(item_count-1)
-        chunk = buf[8i+1:8i+8]
+        chunk = buf[(8i+1):(8i+8)]
         fraw = only(reinterpret(UInt32, chunk[1:4]))
         vraw = only(reinterpret(UInt32, chunk[5:8]))
         freqs[i+1] = fraw
