@@ -177,6 +177,6 @@ Review findings addressed:
 - `cfio_get_subs` returns and `IOReport` uses the effective subscribed channel dictionary, with failure-path cleanup for both returned objects.
 - Temporary channel-name `CFString` values are released in `cfio_copy_channels`.
 
-- [ ] **Step 2: Run the full package test suite after any review fixes**
+- [x] **Step 2: Run the full package test suite after any review fixes**
 - [ ] **Step 3: Push the feature branch and open a pull request against `main`**
 - [ ] **Step 4: Wait for required checks, merge the pull request, and verify the merged `main` checkout**
