@@ -1,7 +1,7 @@
 @testitem "resource lifecycle and iterator contract" begin
     using Test
-    using MacOSIOReport: IOReport, IOReportIterator, Sampler, cfio_get_unitlabel, cfrelease,
-        get_samples
+    using MacOSIOReport: IOReport, IOReportIterator, Sampler, cfio_get_chan, cfio_get_subs,
+        cfio_get_unitlabel, cfrelease, get_samples
 
     @testset "IOReport and Sampler cleanup is idempotent" begin
         report = IOReport()
@@ -38,8 +38,11 @@
     @testset "sample iterators can be collected and closed early" begin
         report = IOReport()
         iterator = first(get_samples(report, UInt64(1), UInt64(1)))[1]
-        @test collect(iterator) isa Vector
+        items = collect(iterator)
+        @test items isa Vector
         @test !isopen(iterator)
+        @test all(isopen, items)
+        foreach(close, items)
 
         iterator = first(get_samples(report, UInt64(1), UInt64(1)))[1]
         @test isopen(iterator)
@@ -47,5 +50,20 @@
         @test !isopen(iterator)
         close(iterator)
         close(report)
+    end
+
+    @testset "subscriptions retain the effective channel dictionary" begin
+        channels = cfio_get_chan()
+        subscription = C_NULL
+        subscribed_channels = C_NULL
+        try
+            subscription, subscribed_channels = cfio_get_subs(channels)
+            @test subscription != C_NULL
+            @test subscribed_channels != C_NULL
+        finally
+            cfrelease(subscribed_channels)
+            cfrelease(subscription)
+            cfrelease(channels)
+        end
     end
 end
