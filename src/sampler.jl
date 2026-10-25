@@ -6,6 +6,11 @@ end
 function Sampler()
     soc = SocInfo()
     ior = IOReport()
-    Sampler(soc, ior)
+    sampler = Sampler(soc, ior)
+    finalizer(close, sampler)
+    sampler
 end
+
+Base.close(sampler::Sampler) = close(sampler.ior)
+Base.isopen(sampler::Sampler) = isopen(sampler.ior)
 
