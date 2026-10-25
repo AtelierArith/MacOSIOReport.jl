@@ -62,14 +62,12 @@ function cfio_get_channel(item::CFDictionaryRef)::String
     return String(CFString(cname))
 end
 
-function cfio_get_get_unitlabel(item::CFDictionaryRef)::String
+function cfio_get_unitlabel(item::CFDictionaryRef)::String
     unitlabel = IOReportChannelGetUnitLabel(item)
-    if unitlabel == C_NULL
-        return ""
-    end
-    return String(CFString(unitlabel))
+    unitlabel == C_NULL ? "" : strip(String(CFString(unitlabel)))
 end
 
+cfio_get_get_unitlabel(item::CFDictionaryRef) = cfio_get_unitlabel(item)
 
 function IOReportCreateSamples(
     subs::IOReportSubscriptionRef,
@@ -108,18 +106,34 @@ mutable struct IOReportIterator
     items_size::UInt64
 end
 
+Base.IteratorSize(::Type{IOReportIterator}) = Base.SizeUnknown()
+
+function Base.close(iter::IOReportIterator)
+    cfrelease(iter.sample)
+    iter.sample = C_NULL
+    iter.items = C_NULL
+    iter.items_size = 0
+    nothing
+end
+
+Base.isopen(iter::IOReportIterator) = iter.sample != C_NULL
+
 function IOReportIterator(data::CFDictionaryRef)
     chval = cfdict_get_val(data, "IOReportChannels")
     if chval === nothing
         # Possibly empty
         index = 0
         sz = 0
-        return IOReportIterator(data, index, C_NULL, sz)
+        iter = IOReportIterator(data, index, C_NULL, sz)
+        finalizer(close, iter)
+        return iter
     end
     items = chval::CFArrayRef
     index = 0
     sz = ccall(:CFArrayGetCount, Csize_t, (CFArrayRef,), items)
-    return IOReportIterator(data, index, items, sz)
+    iter = IOReportIterator(data, index, items, sz)
+    finalizer(close, iter)
+    return iter
 end
 
 mutable struct IOReportIteratorItem
@@ -130,11 +144,35 @@ mutable struct IOReportIteratorItem
     item::CFDictionaryRef
 end
 
+function Base.close(item::IOReportIteratorItem)
+    cfrelease(item.item)
+    item.item = C_NULL
+    nothing
+end
+
+Base.isopen(item::IOReportIteratorItem) = item.item != C_NULL
+
+function _make_iterator_item(
+    group::String,
+    subgroup::String,
+    channel::String,
+    unit::String,
+    item::CFDictionaryRef,
+)
+    current_item = IOReportIteratorItem(
+        group,
+        subgroup,
+        channel,
+        unit,
+        cfretain(item),
+    )
+    finalizer(close, current_item)
+    current_item
+end
+
 function Base.iterate(iter::IOReportIterator, state::Int64 = 0)
     if state >= iter.items_size
-        cfrelease(iter.sample)
-        # Remark
-        #cfrelease(iter.items) <-- do not release iter.items here
+        close(iter)
         return nothing
     end
     item = ccall(
@@ -148,10 +186,9 @@ function Base.iterate(iter::IOReportIterator, state::Int64 = 0)
     group = cfio_get_group(item)
     subgroup = cfio_get_subgroup(item)
     channel = cfio_get_channel(item)
-    ulabel = IOReportChannelGetUnitLabel(item) |> CFString |> String
-    unitstr = (ulabel == C_NULL) ? "" : strip(ulabel)
+    unitstr = cfio_get_unitlabel(item)
 
-    current_item = IOReportIteratorItem(group, subgroup, channel, unitstr, item)
+    current_item = _make_iterator_item(group, subgroup, channel, unitstr, item)
 
     return current_item, state + 1
 end
@@ -162,20 +199,26 @@ function cfio_copy_channels(
 )
 	gname = cfstref(group)
 	sname = isnothing(subgroup) ? C_NULL : cfstref(subgroup)
-	chan = ccall(
-		(:IOReportCopyChannelsInGroup, libIOReport),
-		CFDictionaryRef,
-		(CFStringRef, CFStringRef, Cint, Cint, Cint),
-		gname,
-		sname,
-		0,
-		0,
-		0,
-	)
-    return chan
+	try
+		return ccall(
+			(:IOReportCopyChannelsInGroup, libIOReport),
+			CFDictionaryRef,
+			(CFStringRef, CFStringRef, Cint, Cint, Cint),
+			gname,
+			sname,
+			0,
+			0,
+			0,
+		)
+	finally
+		cfrelease(gname)
+		cfrelease(sname)
+	end
 end
 
-function cfio_get_subs(chan::CFDictionaryRef)::IOReportSubscriptionRef
+function cfio_get_subs(
+	chan::CFDictionaryRef,
+)::Tuple{IOReportSubscriptionRef,CFMutableDictionaryRef}
     # Create a mutable pointer for the subscription
     s = Ref{Ptr{Cvoid}}(C_NULL)
 
@@ -191,13 +234,14 @@ function cfio_get_subs(chan::CFDictionaryRef)::IOReportSubscriptionRef
         C_NULL,
     )
 
-    # Check if the result is null
-    if rs === C_NULL
-        throw("Failed to create subscription")
+    subscribed_channels = s[]
+    if rs === C_NULL || subscribed_channels === C_NULL
+        cfrelease(rs)
+        cfrelease(subscribed_channels)
+        error("Failed to create subscription")
     end
 
-    # Return the subscription reference
-    return rs
+    return rs, subscribed_channels
 end
 
 function cfio_get_chan()
@@ -259,39 +303,97 @@ end
 mutable struct IOReport
     subs::IOReportSubscriptionRef
     chan::CFMutableDictionaryRef
-    prev::Union{Nothing,Tuple{CFDictionaryRef,Union{Nothing,Float64}}}
+    prev::Union{Nothing,Tuple{CFDictionaryRef,Float64}}
 end
+
+function Base.close(report::IOReport)
+    prev = report.prev
+    report.prev = nothing
+    if prev !== nothing
+        cfrelease(prev[1])
+    end
+    cfrelease(report.chan)
+    report.chan = C_NULL
+    cfrelease(report.subs)
+    report.subs = C_NULL
+    nothing
+end
+
+Base.isopen(report::IOReport) = report.subs != C_NULL
 
 function IOReport()
     chan = cfio_get_chan()
-    subs = cfio_get_subs(chan)
-    return IOReport(subs, chan, (C_NULL, nothing))
+    subs = C_NULL
+    subscribed_chan = C_NULL
+    try
+        subs, subscribed_chan = cfio_get_subs(chan)
+        cfrelease(chan)
+        chan = C_NULL
+        report = IOReport(subs, subscribed_chan, nothing)
+        subs = C_NULL
+        subscribed_chan = C_NULL
+        finalizer(close, report)
+        return report
+    catch
+        cfrelease(subscribed_chan)
+        cfrelease(subs)
+        cfrelease(chan)
+        rethrow()
+    end
 end
 
 function get_samples(report::IOReport, duration::UInt64, count::UInt64)
+    isopen(report) || throw(ArgumentError("cannot sample a closed IOReport"))
     c = clamp(count, 1, 32)
     result = Vector{Tuple{IOReportIterator,UInt64}}(undef, c)
     step_msec = duration / c
     step_sec = step_msec / 1000
 
-    prev = report.prev[1] == C_NULL ? raw_sample(report) : report.prev
+    previous = report.prev === nothing ? raw_sample(report) : report.prev
+    # Transfer ownership of the previous sample to this call. If sampling is
+    # interrupted, the report must not retain a pointer that this function has
+    # already released.
+    report.prev = nothing
+    prev_sample::CFDictionaryRef = previous[1]
+    prev_time::Float64 = previous[2]
+    completed = 0
 
-    for i = 1:c
-        sleep(step_sec)
-        next = raw_sample(report)
-        sample_prev::CFDictionaryRef = prev[1]
-        sample_next::CFDictionaryRef = next[1]
-        Δ = IOReportCreateSamplesDelta(sample_prev, sample_next, C_NULL)
-        cfrelease(sample_prev)
-        tprev, tnext = prev[2], next[2]
-        elapsed = (tnext - tprev) * 1000
-        sample_dt = max(round(UInt64, elapsed), 1)
-        result[i] = (IOReportIterator(Δ), sample_dt)
-        prev = next
+    try
+        for i = 1:c
+            next_sample::CFDictionaryRef = C_NULL
+            delta::CFDictionaryRef = C_NULL
+            try
+                sleep(step_sec)
+                next_sample, next_time = raw_sample(report)
+                delta = IOReportCreateSamplesDelta(prev_sample, next_sample, C_NULL)
+                delta == C_NULL && error("Failed to create IOReport sample delta")
+                elapsed = (next_time - prev_time) * 1000
+                sample_dt = max(round(UInt64, elapsed), 1)
+                result[i] = (IOReportIterator(delta), sample_dt)
+                delta = C_NULL
+                completed = i
+
+                cfrelease(prev_sample)
+                prev_sample = next_sample
+                next_sample = C_NULL
+                prev_time = next_time
+            finally
+                cfrelease(delta)
+                cfrelease(next_sample)
+            end
+        end
+
+        report.prev = (prev_sample, prev_time)
+        prev_sample = C_NULL
+        return result
+    catch
+        for i = 1:completed
+            close(result[i][1])
+        end
+        rethrow()
+    finally
+        cfrelease(prev_sample)
     end
-
-    report.prev = prev
-    return result
 end
 
 function raw_sample(report::IOReport)::Tuple{CFDictionaryRef,Float64}
