@@ -119,33 +119,41 @@ function get_metrics(sampler::Sampler, duration::UInt64)
     results = Metrics[]
 
     for (ioreport_iterator, sample_dt) in get_samples(sampler.ior, duration, measures)
-        ecpu_usages = []
-        pcpu_usages = []
-        rs = Metrics()
-        for x in ioreport_iterator
-            if x.group == "CPU Stats" && x.subgroup == "CPU Core Performance States"
-                if occursin("ECPU", x.channel)
-                    push!(ecpu_usages, calc_freq(x.item, sampler.soc.ecpu_freqs))
-                elseif occursin("PCPU", x.channel)
-                    push!(pcpu_usages, calc_freq(x.item, sampler.soc.pcpu_freqs))
-                end
-            elseif x.group == "GPU Stats" && x.subgroup == "GPU Performance States"
-                if x.channel == "GPUPH"
-                    rs.gpu_usage = calc_freq(x.item, sampler.soc.gpu_freqs[2:end])
-                end
-            elseif x.group == "Energy Model"
-                if x.channel == "CPU Energy"
-                    rs.cpu_power += cfio_watts(x.item, x.unit, sample_dt)
-                elseif x.channel == "GPU Energy"
-                    rs.gpu_power += cfio_watts(x.item, x.unit, sample_dt)
-                elseif startswith(x.channel, "ANE")
-                    rs.ane_power += cfio_watts(x.item, x.unit, sample_dt)
+        try
+            ecpu_usages = []
+            pcpu_usages = []
+            rs = Metrics()
+            for x in ioreport_iterator
+                try
+                    if x.group == "CPU Stats" && x.subgroup == "CPU Core Performance States"
+                        if occursin("ECPU", x.channel)
+                            push!(ecpu_usages, calc_freq(x.item, sampler.soc.ecpu_freqs))
+                        elseif occursin("PCPU", x.channel)
+                            push!(pcpu_usages, calc_freq(x.item, sampler.soc.pcpu_freqs))
+                        end
+                    elseif x.group == "GPU Stats" && x.subgroup == "GPU Performance States"
+                        if x.channel == "GPUPH"
+                            rs.gpu_usage = calc_freq(x.item, sampler.soc.gpu_freqs[2:end])
+                        end
+                    elseif x.group == "Energy Model"
+                        if x.channel == "CPU Energy"
+                            rs.cpu_power += cfio_watts(x.item, x.unit, sample_dt)
+                        elseif x.channel == "GPU Energy"
+                            rs.gpu_power += cfio_watts(x.item, x.unit, sample_dt)
+                        elseif startswith(x.channel, "ANE")
+                            rs.ane_power += cfio_watts(x.item, x.unit, sample_dt)
+                        end
+                    end
+                finally
+                    close(x)
                 end
             end
+            rs.ecpu_usage = calc_freq_final(ecpu_usages, sampler.soc.ecpu_freqs)
+            rs.pcpu_usage = calc_freq_final(pcpu_usages, sampler.soc.pcpu_freqs)
+            push!(results, rs)
+        finally
+            close(ioreport_iterator)
         end
-        rs.ecpu_usage = calc_freq_final(ecpu_usages, sampler.soc.ecpu_freqs)
-        rs.pcpu_usage = calc_freq_final(pcpu_usages, sampler.soc.pcpu_freqs)
-        push!(results, rs)
     end
 
     rs = Metrics()

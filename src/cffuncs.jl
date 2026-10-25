@@ -4,6 +4,10 @@ function cfrelease(obj)
     end
 end
 
+function cfretain(obj)::CFTypeRef
+    obj == C_NULL ? C_NULL : ccall(:CFRetain, CFTypeRef, (CFTypeRef,), obj)
+end
+
 function cfstref(s::AbstractString)::CFStringRef
     Base.unsafe_convert(CFStringRef, CFString(s))
 end

@@ -4,7 +4,7 @@
 
 **Goal:** Make the `Sampler() → get_metrics` path used by `TerminalSystemMonitor.jl` release its CoreFoundation/IOReport resources and make low-level sample iterators safe for null metadata and generic Julia collection.
 
-**Architecture:** Add idempotent `Base.close`/`Base.isopen` methods and finalizers to the owning Julia wrappers (`IOReport`, `Sampler`, and `IOReportIterator`). Keep raw CoreFoundation ownership explicit: the wrapper releases only objects returned with ownership by the corresponding Apple API, and all later cleanup is safe to repeat. Normalize unit-label decoding through one null-safe helper and declare the iterator size unknown because it has no `length` method.
+**Architecture:** Add idempotent `Base.close`/`Base.isopen` methods and finalizers to the owning Julia wrappers (`IOReport`, `Sampler`, and `IOReportIterator`). Keep raw CoreFoundation ownership explicit: the wrapper releases only objects returned with ownership by the corresponding Apple API, retains iterator items that escape their sample, and makes all later cleanup safe to repeat. Use the subscription's effective channel dictionary for sampling, normalize unit-label decoding through one null-safe helper, and declare the iterator size unknown because it has no `length` method.
 
 **Tech Stack:** Julia 1.10+, ObjectiveC/CoreFoundation, macOS IOReport C API, Test/ReTestItems, the existing TerminalSystemMonitor extension.
 
@@ -168,8 +168,15 @@ git commit -m "fix: release IOReport resources safely"
 **Files:**
 - Modify: only files identified by the review if a regression test demonstrates a critical or important issue.
 
-- [ ] **Step 1: Review the branch against `main` and classify findings**
+- [x] **Step 1: Review the branch against `main` and classify findings**
+
+Review findings addressed:
+
+- Sampling now transfers the previous sample's ownership out of `IOReport` and closes completed iterators if a later sample fails.
+- Iterator items retain their CoreFoundation dictionary and expose idempotent `close`/`isopen`; `get_metrics` closes each item and its iterator.
+- `cfio_get_subs` returns and `IOReport` uses the effective subscribed channel dictionary, with failure-path cleanup for both returned objects.
+- Temporary channel-name `CFString` values are released in `cfio_copy_channels`.
+
 - [ ] **Step 2: Run the full package test suite after any review fixes**
 - [ ] **Step 3: Push the feature branch and open a pull request against `main`**
 - [ ] **Step 4: Wait for required checks, merge the pull request, and verify the merged `main` checkout**
-
