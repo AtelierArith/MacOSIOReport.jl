@@ -367,8 +367,7 @@ function get_samples(report::IOReport, duration::UInt64, count::UInt64)
                 next_sample, next_time = raw_sample(report)
                 delta = IOReportCreateSamplesDelta(prev_sample, next_sample, C_NULL)
                 delta == C_NULL && error("Failed to create IOReport sample delta")
-                elapsed = (next_time - prev_time) * 1000
-                sample_dt = max(round(UInt64, elapsed), 1)
+                sample_dt = sample_interval_msec(prev_time, next_time)
                 result[i] = (IOReportIterator(delta), sample_dt)
                 delta = C_NULL
                 completed = i
@@ -398,5 +397,16 @@ end
 
 function raw_sample(report::IOReport)::Tuple{CFDictionaryRef,Float64}
     samples = IOReportCreateSamples(report.subs, report.chan, C_NULL)
-    return (samples, time())
+    return (samples, sample_clock())
+end
+
+# Monotonic timestamp in seconds. `time()` follows the wall clock, which can
+# jump backwards (e.g. NTP adjustments), yielding negative sample intervals.
+sample_clock()::Float64 = time_ns() / 1e9
+
+# Elapsed time between two `sample_clock()` timestamps in milliseconds,
+# clamped to at least 1 ms so that it is safe to use as a divisor.
+function sample_interval_msec(prev_time::Float64, next_time::Float64)::UInt64
+    elapsed = (next_time - prev_time) * 1000
+    return round(UInt64, max(elapsed, 1.0))
 end
